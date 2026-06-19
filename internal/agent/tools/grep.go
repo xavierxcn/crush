@@ -3,10 +3,12 @@ package tools
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"io"
 	"net/http"
 	"os"
@@ -15,53 +17,44 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"charm.land/fantasy"
+	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/csync"
 	"github.com/charmbracelet/crush/internal/fsext"
 )
 
 // regexCache provides thread-safe caching of compiled regex patterns
 type regexCache struct {
-	cache map[string]*regexp.Regexp
-	mu    sync.RWMutex
+	*csync.Map[string, *regexp.Regexp]
 }
 
 // newRegexCache creates a new regex cache
 func newRegexCache() *regexCache {
 	return &regexCache{
-		cache: make(map[string]*regexp.Regexp),
+		Map: csync.NewMap[string, *regexp.Regexp](),
 	}
 }
 
 // get retrieves a compiled regex from cache or compiles and caches it
 func (rc *regexCache) get(pattern string) (*regexp.Regexp, error) {
-	// Try to get from cache first (read lock)
-	rc.mu.RLock()
-	if regex, exists := rc.cache[pattern]; exists {
-		rc.mu.RUnlock()
-		return regex, nil
+	re, ok := rc.Get(pattern)
+	if ok && re != nil {
+		return re, nil
 	}
-	rc.mu.RUnlock()
-
-	// Compile the regex (write lock)
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
-
-	// Double-check in case another goroutine compiled it while we waited
-	if regex, exists := rc.cache[pattern]; exists {
-		return regex, nil
-	}
-
-	// Compile and cache the regex
-	regex, err := regexp.Compile(pattern)
+	re, err := regexp.Compile(pattern)
 	if err != nil {
 		return nil, err
 	}
+	rc.Set(pattern, re)
+	return re, nil
+}
 
-	rc.cache[pattern] = regex
-	return regex, nil
+// ResetCache clears compiled regex caches to prevent unbounded growth across sessions.
+func ResetCache() {
+	searchRegexCache.Reset(map[string]*regexp.Regexp{})
+	globRegexCache.Reset(map[string]*regexp.Regexp{})
 }
 
 // Global regex cache instances
@@ -97,8 +90,23 @@ const (
 	maxGrepContentWidth = 500
 )
 
-//go:embed grep.md
-var grepDescription []byte
+//go:embed grep.md.tpl
+var grepDescriptionTmpl []byte
+
+var grepDescriptionTpl = template.Must(
+	template.New("grepDescription").
+		Parse(string(grepDescriptionTmpl)),
+)
+
+type grepDescriptionData struct {
+	MaxResults int
+}
+
+func grepDescription() string {
+	return renderTemplate(grepDescriptionTpl, grepDescriptionData{
+		MaxResults: 100,
+	})
+}
 
 // escapeRegexPattern escapes special regex characters so they're treated as literal characters
 func escapeRegexPattern(pattern string) string {
@@ -112,27 +120,26 @@ func escapeRegexPattern(pattern string) string {
 	return escaped
 }
 
-func NewGrepTool(workingDir string) fantasy.AgentTool {
+func NewGrepTool(workingDir string, config config.ToolGrep) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
 		GrepToolName,
-		string(grepDescription),
+		grepDescription(),
 		func(ctx context.Context, params GrepParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.Pattern == "" {
 				return fantasy.NewTextErrorResponse("pattern is required"), nil
 			}
 
-			// If literal_text is true, escape the pattern
 			searchPattern := params.Pattern
 			if params.LiteralText {
 				searchPattern = escapeRegexPattern(params.Pattern)
 			}
 
-			searchPath := params.Path
-			if searchPath == "" {
-				searchPath = workingDir
-			}
+			searchPath := cmp.Or(params.Path, workingDir)
 
-			matches, truncated, err := searchFiles(ctx, searchPattern, searchPath, params.Include, 100)
+			searchCtx, cancel := context.WithTimeout(ctx, config.GetTimeout())
+			defer cancel()
+
+			matches, truncated, err := searchFiles(searchCtx, searchPattern, searchPath, params.Include, 100)
 			if err != nil {
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("error searching files: %v", err)), nil
 			}
@@ -179,7 +186,8 @@ func NewGrepTool(workingDir string) fantasy.AgentTool {
 					Truncated:       truncated,
 				},
 			), nil
-		})
+		},
+	)
 }
 
 func searchFiles(ctx context.Context, pattern, rootPath, include string, limit int) ([]grepMatch, bool, error) {
@@ -350,6 +358,9 @@ func searchFilesWithRegex(pattern, rootPath, include string) ([]grepMatch, error
 }
 
 func fileContainsPattern(filePath string, pattern *regexp.Regexp) (bool, int, int, string, error) {
+	if pattern == nil {
+		return false, 0, 0, "", nil
+	}
 	// Only search text files.
 	if !isTextFile(filePath) {
 		return false, 0, 0, "", nil
@@ -361,18 +372,26 @@ func fileContainsPattern(filePath string, pattern *regexp.Regexp) (bool, int, in
 	}
 	defer file.Close()
 
-	scanner := bufio.NewScanner(file)
+	reader := bufio.NewReader(file)
 	lineNum := 0
-	for scanner.Scan() {
+	for {
+		line, err := reader.ReadString('\n')
 		lineNum++
-		line := scanner.Text()
+		line = strings.TrimSuffix(line, "\n")
+		line = strings.TrimSuffix(line, "\r")
 		if loc := pattern.FindStringIndex(line); loc != nil {
 			charNum := loc[0] + 1
 			return true, lineNum, charNum, line, nil
 		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return false, 0, 0, "", err
+		}
 	}
 
-	return false, 0, 0, "", scanner.Err()
+	return false, 0, 0, "", nil
 }
 
 // isTextFile checks if a file is a text file by examining its MIME type.

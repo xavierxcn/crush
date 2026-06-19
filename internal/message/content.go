@@ -3,15 +3,17 @@ package message
 import (
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
 
+	"charm.land/catwalk/pkg/catwalk"
 	"charm.land/fantasy"
 	"charm.land/fantasy/providers/anthropic"
 	"charm.land/fantasy/providers/google"
 	"charm.land/fantasy/providers/openai"
-	"github.com/charmbracelet/catwalk/pkg/catwalk"
+	"github.com/charmbracelet/crush/internal/stringext"
 )
 
 type MessageRole string
@@ -23,15 +25,18 @@ const (
 	Tool      MessageRole = "tool"
 )
 
+// mediaLoadFailedPlaceholder is the text substituted for image data that
+// cannot be decoded during session replay.
+const mediaLoadFailedPlaceholder = "[Image data could not be loaded]"
+
 type FinishReason string
 
 const (
-	FinishReasonEndTurn          FinishReason = "end_turn"
-	FinishReasonMaxTokens        FinishReason = "max_tokens"
-	FinishReasonToolUse          FinishReason = "tool_use"
-	FinishReasonCanceled         FinishReason = "canceled"
-	FinishReasonError            FinishReason = "error"
-	FinishReasonPermissionDenied FinishReason = "permission_denied"
+	FinishReasonEndTurn   FinishReason = "end_turn"
+	FinishReasonMaxTokens FinishReason = "max_tokens"
+	FinishReasonToolUse   FinishReason = "tool_use"
+	FinishReasonCanceled  FinishReason = "canceled"
+	FinishReasonError     FinishReason = "error"
 
 	// Should never happen
 	FinishReasonUnknown FinishReason = "unknown"
@@ -123,6 +128,37 @@ type Finish struct {
 }
 
 func (Finish) isPart() {}
+
+// ShellCommand stores a bang-mode shell command and its output as a
+// distinct content part so it can be reconstructed on session restore.
+type ShellCommand struct {
+	Command  string `json:"command"`
+	Output   string `json:"output"`
+	ExitCode int    `json:"exit_code"`
+}
+
+func (ShellCommand) isPart() {}
+
+// HasShellCommand reports whether the message contains any ShellCommand parts.
+func (m *Message) HasShellCommand() bool {
+	for _, part := range m.Parts {
+		if _, ok := part.(ShellCommand); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// ShellCommands returns all ShellCommand parts from the message.
+func (m *Message) ShellCommands() []ShellCommand {
+	var cmds []ShellCommand
+	for _, part := range m.Parts {
+		if sc, ok := part.(ShellCommand); ok {
+			cmds = append(cmds, sc)
+		}
+	}
+	return cmds
+}
 
 type Message struct {
 	ID               string
@@ -407,6 +443,15 @@ func (m *Message) SetToolResults(tr []ToolResult) {
 	}
 }
 
+// Clone returns a deep copy of the message with an independent Parts slice.
+// This prevents race conditions when the message is modified concurrently.
+func (m *Message) Clone() Message {
+	clone := *m
+	clone.Parts = make([]ContentPart, len(m.Parts))
+	copy(clone.Parts, m.Parts)
+	return clone
+}
+
 func (m *Message) AddFinish(reason FinishReason, message, details string) {
 	// remove any existing finish part
 	for i, part := range m.Parts {
@@ -426,16 +471,65 @@ func (m *Message) AddBinary(mimeType string, data []byte) {
 	m.Parts = append(m.Parts, BinaryContent{MIMEType: mimeType, Data: data})
 }
 
+func PromptWithTextAttachments(prompt string, attachments []Attachment) string {
+	var sb strings.Builder
+	sb.WriteString(prompt)
+	addedAttachments := false
+	for _, content := range attachments {
+		if !content.IsText() {
+			continue
+		}
+		if !addedAttachments {
+			sb.WriteString("\n<system_info>The files below have been attached by the user, consider them in your response</system_info>\n")
+			addedAttachments = true
+		}
+		if content.FilePath != "" {
+			fmt.Fprintf(&sb, "<file path='%s'>\n", content.FilePath)
+		} else {
+			sb.WriteString("<file>\n")
+		}
+		sb.WriteString("\n")
+		sb.Write(content.Content)
+		sb.WriteString("\n</file>\n")
+	}
+	return sb.String()
+}
+
 func (m *Message) ToAIMessage() []fantasy.Message {
 	var messages []fantasy.Message
 	switch m.Role {
 	case User:
 		var parts []fantasy.MessagePart
 		text := strings.TrimSpace(m.Content().Text)
+		var textAttachments []Attachment
+		for _, content := range m.BinaryContent() {
+			if !strings.HasPrefix(content.MIMEType, "text/") {
+				continue
+			}
+			textAttachments = append(textAttachments, Attachment{
+				FilePath: content.Path,
+				MimeType: content.MIMEType,
+				Content:  content.Data,
+			})
+		}
+		text = PromptWithTextAttachments(text, textAttachments)
+		// Include bang-mode shell commands as context for the agent.
+		for _, sc := range m.ShellCommands() {
+			shellText := fmt.Sprintf("$ %s\n%s\n(exit code %d)", sc.Command, sc.Output, sc.ExitCode)
+			if text != "" {
+				text += "\n\n" + shellText
+			} else {
+				text = shellText
+			}
+		}
 		if text != "" {
 			parts = append(parts, fantasy.TextPart{Text: text})
 		}
 		for _, content := range m.BinaryContent() {
+			// skip text attachements
+			if strings.HasPrefix(content.MIMEType, "text/") {
+				continue
+			}
 			parts = append(parts, fantasy.FilePart{
 				Filename:  content.Path,
 				Data:      content.Data,
@@ -492,9 +586,15 @@ func (m *Message) ToAIMessage() []fantasy.Message {
 					Error: errors.New(result.Content),
 				}
 			} else if result.Data != "" {
-				content = fantasy.ToolResultOutputContentMedia{
-					Data:      result.Data,
-					MediaType: result.MIMEType,
+				if stringext.IsValidBase64(result.Data) {
+					content = fantasy.ToolResultOutputContentMedia{
+						Data:      result.Data,
+						MediaType: result.MIMEType,
+					}
+				} else {
+					content = fantasy.ToolResultOutputContentText{
+						Text: mediaLoadFailedPlaceholder,
+					}
 				}
 			} else {
 				content = fantasy.ToolResultOutputContentText{

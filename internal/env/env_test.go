@@ -8,7 +8,7 @@ import (
 )
 
 func TestOsEnv_Get(t *testing.T) {
-	env := New()
+	env := &osEnv{}
 
 	// Test getting an existing environment variable
 	t.Setenv("TEST_VAR", "test_value")
@@ -22,7 +22,7 @@ func TestOsEnv_Get(t *testing.T) {
 }
 
 func TestOsEnv_Env(t *testing.T) {
-	env := New()
+	env := &osEnv{}
 
 	envVars := env.Env()
 
@@ -90,13 +90,15 @@ func TestMapEnv_Env(t *testing.T) {
 	t.Run("empty map", func(t *testing.T) {
 		env := NewFromMap(map[string]string{})
 		envVars := env.Env()
-		require.Nil(t, envVars)
+		require.NotNil(t, envVars)
+		require.Len(t, envVars, 0)
 	})
 
 	t.Run("nil map", func(t *testing.T) {
 		env := NewFromMap(nil)
 		envVars := env.Env()
-		require.Nil(t, envVars)
+		require.NotNil(t, envVars)
+		require.Len(t, envVars, 0)
 	})
 }
 

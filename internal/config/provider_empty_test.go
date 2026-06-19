@@ -1,47 +1,39 @@
 package config
 
 import (
-	"encoding/json"
+	"context"
 	"os"
 	"testing"
 
-	"github.com/charmbracelet/catwalk/pkg/catwalk"
+	"charm.land/catwalk/pkg/catwalk"
 	"github.com/stretchr/testify/require"
 )
 
 type emptyProviderClient struct{}
 
-func (m *emptyProviderClient) GetProviders() ([]catwalk.Provider, error) {
+func (m *emptyProviderClient) GetProviders(context.Context, string) ([]catwalk.Provider, error) {
 	return []catwalk.Provider{}, nil
 }
 
-func TestProvider_loadProvidersEmptyResult(t *testing.T) {
+// TestCatwalkSync_GetEmptyResultFromClient tests that when the client returns
+// an empty list, we fall back to cached providers and return an error.
+func TestCatwalkSync_GetEmptyResultFromClient(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	path := tmpDir + "/providers.json"
+
+	syncer := &catwalkSync{}
 	client := &emptyProviderClient{}
-	tmpPath := t.TempDir() + "/providers.json"
 
-	providers, err := loadProviders(false, client, tmpPath)
-	require.Contains(t, err.Error(), "Crush was unable to fetch an updated list of providers")
-	require.Empty(t, providers)
-	require.Len(t, providers, 0)
+	syncer.Init(client, path, true)
 
-	// Check that no cache file was created for empty results
-	require.NoFileExists(t, tmpPath, "Cache file should not exist for empty results")
-}
+	providers, err := syncer.Get(t.Context())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "empty providers list from catwalk")
+	require.NotEmpty(t, providers) // Should have embedded providers as fallback.
 
-func TestProvider_loadProvidersEmptyCache(t *testing.T) {
-	client := &mockProviderClient{shouldFail: false}
-	tmpPath := t.TempDir() + "/providers.json"
-
-	// Create an empty cache file
-	emptyProviders := []catwalk.Provider{}
-	data, err := json.Marshal(emptyProviders)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(tmpPath, data, 0o644))
-
-	// Should refresh and get real providers instead of using empty cache
-	providers, err := loadProviders(false, client, tmpPath)
-	require.NoError(t, err)
-	require.NotNil(t, providers)
-	require.Len(t, providers, 1)
-	require.Equal(t, "Mock", providers[0].Name)
+	// Check that no cache file was created for empty results.
+	_, statErr := os.Stat(path)
+	require.True(t, os.IsNotExist(statErr), "Cache file should not exist for empty results")
 }

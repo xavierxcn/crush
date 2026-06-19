@@ -42,12 +42,15 @@ Thumbs.db
 .env
 .env.local
 
+# Nix/direnv
+.direnv/
+
 **/.crush/**
 
 /crush
 /tmp/
 
 manpages/
-completions/
-!internal/tui/components/completions/
+completions/crush.*sh
 .prettierignore
+.task

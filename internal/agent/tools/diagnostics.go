@@ -7,56 +7,138 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"charm.land/fantasy"
-	"github.com/charmbracelet/crush/internal/csync"
 	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/x/powernap/pkg/lsp/protocol"
 )
 
 type DiagnosticsParams struct {
-	FilePath string `json:"file_path,omitempty" description:"The path to the file to get diagnostics for (leave w empty for project diagnostics)"`
+	FilePath string `json:"file_path,omitempty" description:"The path to the file to get diagnostics for (leave empty for project diagnostics)"`
 }
 
 const DiagnosticsToolName = "lsp_diagnostics"
 
 //go:embed diagnostics.md
-var diagnosticsDescription []byte
+var diagnosticsDescription string
 
-func NewDiagnosticsTool(lspClients *csync.Map[string, *lsp.Client]) fantasy.AgentTool {
+func NewDiagnosticsTool(lspManager *lsp.Manager) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
 		DiagnosticsToolName,
-		string(diagnosticsDescription),
+		diagnosticsDescription,
 		func(ctx context.Context, params DiagnosticsParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
-			if lspClients.Len() == 0 {
+			if lspManager.Clients().Len() == 0 {
 				return fantasy.NewTextErrorResponse("no LSP clients available"), nil
 			}
-			notifyLSPs(ctx, lspClients, params.FilePath)
-			output := getDiagnostics(params.FilePath, lspClients)
+			notifyLSPs(ctx, lspManager, params.FilePath)
+			output := getDiagnostics(params.FilePath, lspManager)
 			return fantasy.NewTextResponse(output), nil
-		})
+		},
+	)
 }
 
-func notifyLSPs(ctx context.Context, lsps *csync.Map[string, *lsp.Client], filepath string) {
-	if filepath == "" {
+// openInLSPs ensures LSP servers are running and aware of the file, but does
+// not notify changes or wait for fresh diagnostics. Use this for read-only
+// operations like view where the file content hasn't changed.
+func openInLSPs(
+	ctx context.Context,
+	manager *lsp.Manager,
+	filepath string,
+) {
+	if filepath == "" || manager == nil {
 		return
 	}
-	for client := range lsps.Seq() {
+
+	manager.Start(ctx, filepath)
+
+	for client := range manager.Clients().Seq() {
+		if !client.HandlesFile(filepath) {
+			continue
+		}
+		_ = client.OpenFileOnDemand(ctx, filepath)
+	}
+}
+
+// waitForLSPDiagnostics waits briefly for diagnostics publication after a file
+// has been opened. Intended for read-only situations where viewing up-to-date
+// files matters but latency should remain low (i.e. when using the view tool).
+func waitForLSPDiagnostics(
+	ctx context.Context,
+	manager *lsp.Manager,
+	filepath string,
+	timeout time.Duration,
+) {
+	if filepath == "" || manager == nil || timeout <= 0 {
+		return
+	}
+
+	var wg sync.WaitGroup
+	for client := range manager.Clients().Seq() {
+		if !client.HandlesFile(filepath) {
+			continue
+		}
+		wg.Go(func() {
+			client.WaitForDiagnostics(ctx, timeout)
+		})
+	}
+	wg.Wait()
+}
+
+// notifyLSPs notifies LSP servers that a file has changed and waits for
+// updated diagnostics. Use this after edit/multiedit operations.
+// When filepath is empty, refreshes all open files across all LSP clients
+// and sends a workspace-level change notification for full re-analysis.
+func notifyLSPs(
+	ctx context.Context,
+	manager *lsp.Manager,
+	filepath string,
+) {
+	if manager == nil {
+		return
+	}
+	if filepath == "" {
+		// No specific file — refresh all open files for all clients.
+		var wg sync.WaitGroup
+		for client := range manager.Clients().Seq() {
+			wg.Go(func() {
+				client.RefreshOpenFiles(ctx)
+				if err := client.NotifyWorkspaceChange(ctx); err != nil {
+					slog.WarnContext(ctx, "Failed to notify workspace change", "error", err)
+				}
+				client.WaitForDiagnostics(ctx, 5*time.Second)
+			})
+		}
+		wg.Wait()
+		return
+	}
+
+	manager.Start(ctx, filepath)
+
+	var wg sync.WaitGroup
+	for client := range manager.Clients().Seq() {
 		if !client.HandlesFile(filepath) {
 			continue
 		}
 		_ = client.OpenFileOnDemand(ctx, filepath)
 		_ = client.NotifyChange(ctx, filepath)
-		client.WaitForDiagnostics(ctx, 5*time.Second)
+		wg.Go(func() {
+			client.WaitForDiagnostics(ctx, 5*time.Second)
+		})
 	}
+	wg.Wait()
 }
 
-func getDiagnostics(filePath string, lsps *csync.Map[string, *lsp.Client]) string {
-	fileDiagnostics := []string{}
-	projectDiagnostics := []string{}
+func getDiagnostics(filePath string, manager *lsp.Manager) string {
+	if manager == nil {
+		return ""
+	}
 
-	for lspName, client := range lsps.Seq2() {
+	var fileDiagnostics []string
+	var projectDiagnostics []string
+
+	for lspName, client := range manager.Clients().Seq2() {
 		for location, diags := range client.GetDiagnostics() {
 			path, err := location.Path()
 			if err != nil {
@@ -137,11 +219,9 @@ func formatDiagnostic(pth string, diagnostic protocol.Diagnostic, source string)
 
 	location := fmt.Sprintf("%s:%d:%d", pth, diagnostic.Range.Start.Line+1, diagnostic.Range.Start.Character+1)
 
-	sourceInfo := ""
+	sourceInfo := source
 	if diagnostic.Source != "" {
-		sourceInfo = diagnostic.Source
-	} else if source != "" {
-		sourceInfo = source
+		sourceInfo += " " + diagnostic.Source
 	}
 
 	codeInfo := ""
@@ -151,7 +231,7 @@ func formatDiagnostic(pth string, diagnostic protocol.Diagnostic, source string)
 
 	tagsInfo := ""
 	if len(diagnostic.Tags) > 0 {
-		tags := []string{}
+		var tags []string
 		for _, tag := range diagnostic.Tags {
 			switch tag {
 			case protocol.Unnecessary:

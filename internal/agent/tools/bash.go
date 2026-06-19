@@ -7,7 +7,6 @@ import (
 	_ "embed"
 	"fmt"
 	"html/template"
-	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -15,22 +14,25 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/fsext"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/shell"
 )
 
 type BashParams struct {
-	Description     string `json:"description" description:"A brief description of what the command does, try to keep it under 30 characters or so"`
-	Command         string `json:"command" description:"The command to execute"`
-	WorkingDir      string `json:"working_dir,omitempty" description:"The working directory to execute the command in (defaults to current directory)"`
-	RunInBackground bool   `json:"run_in_background,omitempty" description:"Set to true (boolean) to run this command in the background. Use job_output to read the output later."`
+	Description         string `json:"description" description:"A brief description of what the command does, try to keep it under 30 characters or so"`
+	Command             string `json:"command" description:"The command to execute"`
+	WorkingDir          string `json:"working_dir,omitempty" description:"The working directory to execute the command in (defaults to current directory)"`
+	RunInBackground     bool   `json:"run_in_background,omitempty" description:"Set to true (boolean) to run this command in the background. Use job_output to read the output later."`
+	AutoBackgroundAfter int    `json:"auto_background_after,omitempty" description:"Seconds to wait before automatically moving the command to a background job (default: 60)"`
 }
 
 type BashPermissionsParams struct {
-	Description     string `json:"description"`
-	Command         string `json:"command"`
-	WorkingDir      string `json:"working_dir"`
-	RunInBackground bool   `json:"run_in_background"`
+	Description         string `json:"description"`
+	Command             string `json:"command"`
+	WorkingDir          string `json:"working_dir"`
+	RunInBackground     bool   `json:"run_in_background"`
+	AutoBackgroundAfter int    `json:"auto_background_after"`
 }
 
 type BashResponseMetadata struct {
@@ -46,12 +48,12 @@ type BashResponseMetadata struct {
 const (
 	BashToolName = "bash"
 
-	AutoBackgroundThreshold = 1 * time.Minute // Commands taking longer automatically become background jobs
-	MaxOutputLength         = 30000
-	BashNoOutput            = "no output"
+	DefaultAutoBackgroundAfter = 60 // Commands taking longer automatically become background jobs
+	MaxOutputLength            = 30000
+	BashNoOutput               = "no output"
 )
 
-//go:embed bash.tpl
+//go:embed bash.md.tpl
 var bashDescriptionTmpl []byte
 
 var bashDescriptionTpl = template.Must(
@@ -63,7 +65,9 @@ type bashDescriptionData struct {
 	BannedCommands  string
 	MaxOutputLength int
 	Attribution     config.Attribution
-	ModelName       string
+	ModelID         string
+	RgAvailable     bool
+	GhAvailable     bool
 }
 
 var bannedCommands = []string{
@@ -139,14 +143,16 @@ var bannedCommands = []string{
 	"ufw",
 }
 
-func bashDescription(attribution *config.Attribution, modelName string) string {
+func bashDescription(attribution *config.Attribution, modelID string) string {
 	bannedCommandsStr := strings.Join(bannedCommands, ", ")
 	var out bytes.Buffer
 	if err := bashDescriptionTpl.Execute(&out, bashDescriptionData{
 		BannedCommands:  bannedCommandsStr,
 		MaxOutputLength: MaxOutputLength,
 		Attribution:     *attribution,
-		ModelName:       modelName,
+		ModelID:         modelID,
+		RgAvailable:     getRg() != "",
+		GhAvailable:     ghAvailable,
 	}); err != nil {
 		// this should never happen.
 		panic("failed to execute bash description template: " + err.Error())
@@ -186,10 +192,10 @@ func blockFuncs() []shell.BlockFunc {
 	}
 }
 
-func NewBashTool(permissions permission.Service, workingDir string, attribution *config.Attribution, modelName string) fantasy.AgentTool {
+func NewBashTool(permissions permission.Service, workingDir string, attribution *config.Attribution, modelID string) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
 		BashToolName,
-		string(bashDescription(attribution, modelName)),
+		string(bashDescription(attribution, modelID)),
 		func(ctx context.Context, params BashParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.Command == "" {
 				return fantasy.NewTextErrorResponse("missing command"), nil
@@ -201,11 +207,13 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 			isSafeReadOnly := false
 			cmdLower := strings.ToLower(params.Command)
 
-			for _, safe := range safeCommands {
-				if strings.HasPrefix(cmdLower, safe) {
-					if len(cmdLower) == len(safe) || cmdLower[len(safe)] == ' ' || cmdLower[len(safe)] == '-' {
-						isSafeReadOnly = true
-						break
+			if !containsCommandChaining(params.Command) {
+				for _, safe := range safeCommands {
+					if strings.HasPrefix(cmdLower, safe) {
+						if len(cmdLower) == len(safe) || cmdLower[len(safe)] == ' ' || cmdLower[len(safe)] == '-' {
+							isSafeReadOnly = true
+							break
+						}
 					}
 				}
 			}
@@ -215,7 +223,8 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for executing shell command")
 			}
 			if !isSafeReadOnly {
-				p := permissions.Request(
+				p, err := permissions.Request(
+					ctx,
 					permission.CreatePermissionRequest{
 						SessionID:   sessionID,
 						Path:        execWorkingDir,
@@ -226,8 +235,11 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 						Params:      BashPermissionsParams(params),
 					},
 				)
+				if err != nil {
+					return fantasy.ToolResponse{}, err
+				}
 				if !p {
-					return fantasy.ToolResponse{}, permission.ErrorPermissionDenied
+					return NewPermissionDeniedResponse(), nil
 				}
 			}
 
@@ -300,7 +312,10 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 			// Wait for either completion, auto-background threshold, or context cancellation
 			ticker := time.NewTicker(100 * time.Millisecond)
 			defer ticker.Stop()
-			timeout := time.After(AutoBackgroundThreshold)
+
+			autoBackgroundAfter := cmp.Or(params.AutoBackgroundAfter, DefaultAutoBackgroundAfter)
+			autoBackgroundThreshold := time.Duration(autoBackgroundAfter) * time.Second
+			timeout := time.After(autoBackgroundThreshold)
 
 			var stdout, stderr string
 			var done bool
@@ -365,7 +380,8 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 			}
 			response := fmt.Sprintf("Command is taking longer than expected and has been moved to background.\n\nBackground shell ID: %s\n\nUse job_output tool to view output or job_kill to terminate.", bgShell.ID)
 			return fantasy.WithResponseMetadata(fantasy.NewTextResponse(response), metadata), nil
-		})
+		},
+	)
 }
 
 // formatOutput formats the output of a completed command with error handling
@@ -406,7 +422,7 @@ func formatOutput(stdout, stderr string, execErr error) string {
 	return stdout
 }
 
-func truncateOutput(content string) string {
+func TruncateOutput(content string) string {
 	if len(content) <= MaxOutputLength {
 		return content
 	}
@@ -419,6 +435,10 @@ func truncateOutput(content string) string {
 	return fmt.Sprintf("%s\n\n... [%d lines truncated] ...\n\n%s", start, truncatedLinesCount, end)
 }
 
+func truncateOutput(content string) string {
+	return TruncateOutput(content)
+}
+
 func countLines(s string) int {
 	if s == "" {
 		return 0
@@ -428,12 +448,7 @@ func countLines(s string) int {
 
 func normalizeWorkingDir(path string) string {
 	if runtime.GOOS == "windows" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			cwd = "C:"
-		}
-		path = strings.ReplaceAll(path, filepath.VolumeName(cwd), "")
+		path = strings.ReplaceAll(path, fsext.WindowsWorkingDirDrive(), "")
 	}
-
 	return filepath.ToSlash(path)
 }

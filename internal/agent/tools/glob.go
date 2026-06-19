@@ -2,9 +2,11 @@ package tools
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	_ "embed"
 	"fmt"
+	"html/template"
 	"log/slog"
 	"os/exec"
 	"path/filepath"
@@ -12,13 +14,29 @@ import (
 	"strings"
 
 	"charm.land/fantasy"
+	"github.com/charmbracelet/crush/internal/filepathext"
 	"github.com/charmbracelet/crush/internal/fsext"
 )
 
 const GlobToolName = "glob"
 
-//go:embed glob.md
-var globDescription []byte
+//go:embed glob.md.tpl
+var globDescriptionTmpl []byte
+
+var globDescriptionTpl = template.Must(
+	template.New("globDescription").
+		Parse(string(globDescriptionTmpl)),
+)
+
+type globDescriptionData struct {
+	MaxResults int
+}
+
+func globDescription() string {
+	return renderTemplate(globDescriptionTpl, globDescriptionData{
+		MaxResults: 100,
+	})
+}
 
 type GlobParams struct {
 	Pattern string `json:"pattern" description:"The glob pattern to match files against"`
@@ -33,20 +51,17 @@ type GlobResponseMetadata struct {
 func NewGlobTool(workingDir string) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
 		GlobToolName,
-		string(globDescription),
+		globDescription(),
 		func(ctx context.Context, params GlobParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.Pattern == "" {
 				return fantasy.NewTextErrorResponse("pattern is required"), nil
 			}
 
-			searchPath := params.Path
-			if searchPath == "" {
-				searchPath = workingDir
-			}
+			searchPath := cmp.Or(params.Path, workingDir)
 
 			files, truncated, err := globFiles(ctx, params.Pattern, searchPath, 100)
 			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("error finding files: %w", err)
+				return fantasy.NewTextErrorResponse(fmt.Sprintf("error finding files: %v", err)), nil
 			}
 
 			var output string
@@ -67,7 +82,8 @@ func NewGlobTool(workingDir string) fantasy.AgentTool {
 					Truncated:     truncated,
 				},
 			), nil
-		})
+		},
+	)
 }
 
 func globFiles(ctx context.Context, pattern, searchPath string, limit int) ([]string, bool, error) {
@@ -81,7 +97,7 @@ func globFiles(ctx context.Context, pattern, searchPath string, limit int) ([]st
 		slog.Warn("Ripgrep execution failed, falling back to doublestar", "error", err)
 	}
 
-	return fsext.GlobWithDoubleStar(pattern, searchPath, limit)
+	return fsext.GlobGitignoreAware(pattern, searchPath, limit)
 }
 
 func runRipgrep(cmd *exec.Cmd, searchRoot string, limit int) ([]string, error) {
@@ -98,10 +114,7 @@ func runRipgrep(cmd *exec.Cmd, searchRoot string, limit int) ([]string, error) {
 		if len(p) == 0 {
 			continue
 		}
-		absPath := string(p)
-		if !filepath.IsAbs(absPath) {
-			absPath = filepath.Join(searchRoot, absPath)
-		}
+		absPath := filepathext.SmartJoin(searchRoot, string(p))
 		if fsext.SkipHidden(absPath) {
 			continue
 		}

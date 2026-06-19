@@ -1,13 +1,13 @@
 # Crush
 
 <p align="center">
-    <a href="https://stuff.charm.sh/crush/charm-crush.png"><img width="450" alt="Charm Crush Logo" src="https://github.com/user-attachments/assets/adc1a6f4-b284-4603-836c-59038caa2e8b" /></a><br />
+    <a href="https://stuff.charm.sh/crush/charm-crush.png"><img width="450" alt="Charm Crush Logo" src="https://github.com/user-attachments/assets/cf8ca3ce-8b02-43f0-9d0f-5a331488da4b" /></a><br />
     <a href="https://github.com/charmbracelet/crush/releases"><img src="https://img.shields.io/github/release/charmbracelet/crush" alt="Latest Release"></a>
     <a href="https://github.com/charmbracelet/crush/actions"><img src="https://github.com/charmbracelet/crush/actions/workflows/build.yml/badge.svg" alt="Build Status"></a>
 </p>
 
 <p align="center">Your new coding bestie, now available in your favourite terminal.<br />Your tools, your code, and your workflows, wired into your LLM of choice.</p>
-<p align="center">你的新编程伙伴，现在就在你最爱的终端中。<br />你的工具、代码和工作流，都与您选择的 LLM 模型紧密相连。</p>
+<p align="center">终端里的编程新搭档，<br />无缝接入你的工具、代码与工作流，全面兼容主流 LLM 模型。</p>
 
 <p align="center"><img width="800" alt="Crush Demo" src="https://github.com/user-attachments/assets/58280caf-851b-470a-b6f7-d5c4ea8a1968" /></p>
 
@@ -18,7 +18,8 @@
 - **Session-Based:** maintain multiple work sessions and contexts per project
 - **LSP-Enhanced:** Crush uses LSPs for additional context, just like you do
 - **Extensible:** add capabilities via MCPs (`http`, `stdio`, and `sse`)
-- **Works Everywhere:** first-class support in every terminal on macOS, Linux, Windows (PowerShell and WSL), FreeBSD, OpenBSD, and NetBSD
+- **Works Everywhere:** first-class support in every terminal on macOS, Linux, Windows (PowerShell and WSL), Android, FreeBSD, OpenBSD, and NetBSD
+- **Industrial Grade:** built on the Charm ecosystem, powering 25k+ applications, from leading open source projects to business-critical infrastructure
 
 ## Installation
 
@@ -36,6 +37,9 @@ yay -S crush-bin
 
 # Nix
 nix run github:numtide/nix-ai-tools#crush
+
+# FreeBSD
+pkg install crush
 ```
 
 Windows users:
@@ -52,9 +56,9 @@ scoop install crush
 <details>
 <summary><strong>Nix (NUR)</strong></summary>
 
-Crush is available via [NUR](https://github.com/nix-community/NUR) in `nur.repos.charmbracelet.crush`.
+Crush is available via the official Charm [NUR](https://github.com/nix-community/NUR) in `nur.repos.charmbracelet.crush`, which is the most up-to-date way to get Crush in Nix.
 
-You can also try out Crush via `nix-shell`:
+You can also try out Crush via the NUR with `nix-shell`:
 
 ```bash
 # Add the NUR channel.
@@ -165,35 +169,54 @@ go install github.com/charmbracelet/crush@latest
 > [!WARNING]
 > Productivity may increase when using Crush and you may find yourself nerd
 > sniped when first using the application. If the symptoms persist, join the
-> [Discord][discord] and nerd snipe the rest of us.
+> [Slack][slack] or [Discord][discord] and nerd snipe the rest of us.
 
 ## Getting Started
 
 The quickest way to get started is to grab an API key for your preferred
-provider such as Anthropic, OpenAI, Groq, or OpenRouter and just start
+provider such as Anthropic, OpenAI, Groq, OpenRouter, or Vercel AI Gateway and just start
 Crush. You'll be prompted to enter your API key.
 
 That said, you can also set environment variables for preferred providers.
 
 | Environment Variable        | Provider                                           |
 | --------------------------- | -------------------------------------------------- |
+| `HYPER_API_KEY`             | Charm Hyper                                        |
 | `ANTHROPIC_API_KEY`         | Anthropic                                          |
 | `OPENAI_API_KEY`            | OpenAI                                             |
-| `OPENROUTER_API_KEY`        | OpenRouter                                         |
+| `VERCEL_API_KEY`            | Vercel AI Gateway                                  |
 | `GEMINI_API_KEY`            | Google Gemini                                      |
+| `SYNTHETIC_API_KEY`         | Synthetic                                          |
+| `ZAI_API_KEY`               | Z.ai                                               |
+| `MINIMAX_API_KEY`           | MiniMax                                            |
+| `HF_TOKEN`                  | Hugging Face Inference                             |
 | `CEREBRAS_API_KEY`          | Cerebras                                           |
-| `HF_TOKEN`                  | Huggingface Inference                              |
+| `OPENROUTER_API_KEY`        | OpenRouter                                         |
+| `IONET_API_KEY`             | io.net                                             |
+| `ALIBABA_SINGAPORE_API_KEY` | Alibaba (Singapore)                                |
+| `GROQ_API_KEY`              | Groq                                               |
+| `AVIAN_API_KEY`             | Avian                                              |
+| `OPENCODE_API_KEY`          | OpenCode Zen & Go                                  |
 | `VERTEXAI_PROJECT`          | Google Cloud VertexAI (Gemini)                     |
 | `VERTEXAI_LOCATION`         | Google Cloud VertexAI (Gemini)                     |
-| `GROQ_API_KEY`              | Groq                                               |
-| `AWS_ACCESS_KEY_ID`         | Amazon Bedrock (Claude)                               |
-| `AWS_SECRET_ACCESS_KEY`     | Amazon Bedrock (Claude)                               |
-| `AWS_REGION`                | Amazon Bedrock (Claude)                               |
-| `AWS_PROFILE`               | Amazon Bedrock (Custom Profile)                       |
-| `AWS_BEARER_TOKEN_BEDROCK`  | Amazon Bedrock                                        |
+| `AWS_ACCESS_KEY_ID`         | Amazon Bedrock (Claude)                            |
+| `AWS_SECRET_ACCESS_KEY`     | Amazon Bedrock (Claude)                            |
+| `AWS_REGION`                | Amazon Bedrock (Claude)                            |
+| `AWS_PROFILE`               | Amazon Bedrock (Custom Profile)                    |
+| `AWS_BEARER_TOKEN_BEDROCK`  | Amazon Bedrock                                     |
 | `AZURE_OPENAI_API_ENDPOINT` | Azure OpenAI models                                |
 | `AZURE_OPENAI_API_KEY`      | Azure OpenAI models (optional when using Entra ID) |
 | `AZURE_OPENAI_API_VERSION`  | Azure OpenAI models                                |
+
+### Subscriptions
+
+If you prefer subscription-based usage, here are some plans that work well in
+Crush:
+
+- [Synthetic](https://synthetic.new/pricing)
+- [GLM Coding Plan](https://z.ai/subscribe)
+- [Kimi Code](https://www.kimi.com/membership/pricing)
+- [MiniMax Coding Plan](https://platform.minimax.io/subscribe/coding-plan)
 
 ### By the Way
 
@@ -204,6 +227,10 @@ Crush’s default model listing is managed in [Catwalk](https://github.com/charm
 <a href="https://github.com/charmbracelet/catwalk"><img width="174" height="174" alt="Catwalk Badge" src="https://github.com/user-attachments/assets/95b49515-fe82-4409-b10d-5beb0873787d" /></a>
 
 ## Configuration
+
+> [!TIP]
+> Crush ships with a builtin `crush-config` skill for configuring itself. In
+> many cases you can simply ask Crush to configure itself.
 
 Crush runs great with no configuration. That said, if you do need or want to
 customize Crush, configuration can be added either local to the project itself,
@@ -222,7 +249,8 @@ Configuration itself is stored as a JSON object:
 }
 ```
 
-As an additional note, Crush also stores ephemeral data, such as application state, in one additional location:
+As an additional note, Crush also stores ephemeral data, such as application
+state, in one additional location:
 
 ```bash
 # Unix
@@ -231,6 +259,12 @@ $HOME/.local/share/crush/crush.json
 # Windows
 %LOCALAPPDATA%\crush\crush.json
 ```
+
+> [!TIP]
+> You can override the user and data config locations by setting:
+>
+> - `CRUSH_GLOBAL_CONFIG`
+> - `CRUSH_GLOBAL_DATA`
 
 ### LSPs
 
@@ -260,10 +294,36 @@ like you would. LSPs can be added manually like so:
 
 ### MCPs
 
-Crush also supports Model Context Protocol (MCP) servers through three
-transport types: `stdio` for command-line servers, `http` for HTTP endpoints,
-and `sse` for Server-Sent Events. Environment variable expansion is supported
-using `$(echo $VAR)` syntax.
+Crush also supports Model Context Protocol (MCP) servers through three transport
+types: `stdio` for command-line servers, `http` for HTTP endpoints, and `sse`
+for Server-Sent Events.
+
+Shell-style value expansion (`$VAR`, `${VAR:-default}`, `$(command)`, quoting,
+nesting) works in `command`, `args`, `env`, `headers`, and `url`, so
+file-based secrets work out of the box. You can use values like `"$TOKEN"`
+or `"$(cat /path/to/secret/token)"`. Expansion runs through Crush's embedded
+shell, so the same syntax works on every supported system, Windows included.
+
+Unset variables expand to the empty string by default, matching bash. For
+required credentials, use `${VAR:?message}` so an unset variable fails loudly
+at load time with `message` instead of silently resolving to empty:
+
+```json
+{ "api_key": "${CODEBERG_TOKEN:?set CODEBERG_TOKEN}" }
+```
+
+Headers (both MCP `headers` and provider `extra_headers`) whose value
+resolves to the empty string are dropped from the outgoing request rather
+than sent as `Header:`. That keeps optional env-gated headers like
+`"OpenAI-Organization": "$OPENAI_ORG_ID"` clean when the variable is unset.
+
+Provider `extra_body` is a non-expanding JSON passthrough; put env-driven
+values in `extra_headers` or the provider's `api_key` / `base_url`, all of
+which do expand.
+
+> **Security note:** `crush.json` is trusted code. Any `$(...)` in it runs at
+> load time with your shell's privileges, before the UI appears. Don't launch
+> Crush in a directory whose `crush.json` you haven't reviewed.
 
 ```json
 {
@@ -275,6 +335,7 @@ using `$(echo $VAR)` syntax.
       "args": ["/path/to/mcp-server.js"],
       "timeout": 120,
       "disabled": false,
+      "disabled_tools": ["some-tool-name"],
       "env": {
         "NODE_ENV": "production"
       }
@@ -284,6 +345,7 @@ using `$(echo $VAR)` syntax.
       "url": "https://api.githubcopilot.com/mcp/",
       "timeout": 120,
       "disabled": false,
+      "disabled_tools": ["create_issue", "create_pull_request"],
       "headers": {
         "Authorization": "Bearer $GH_PAT"
       }
@@ -297,6 +359,72 @@ using `$(echo $VAR)` syntax.
         "API-Key": "$(echo $API_KEY)"
       }
     }
+  }
+}
+```
+
+### Hooks
+
+Crush has preliminary support for hooks. For details, see
+[the hook guide](./docs/hooks/).
+
+### Sharing a workspace across clients
+
+When Crush is run against a shared backend (for example two TUIs talking to
+the same `crush serve`), clients are grouped into **workspaces** keyed by
+their resolved `--cwd`. Two clients with the same `--cwd` join the same
+underlying workspace, so they share the session list, message history,
+permission queue, LSP, and MCP state.
+
+Joining is implicit: pointing a second client at the same working directory
+attaches it to the existing workspace. Each new invocation, however, starts
+in its own fresh session by default. To pick up the conversation another
+client already has open, use the session manager (the session picker) and
+select it. Sessions surface two signals there:
+
+- `IsBusy` is set while an agent turn is in flight for that session.
+- `AttachedClients` reports how many clients are currently viewing it.
+
+A non-zero `AttachedClients` (often combined with `IsBusy`) is the cue that a
+session is "in progress" on another client and joining it will mirror that
+view live.
+
+The first client to create a workspace fixes its process-wide flags. In
+particular, `--yolo` and `--debug` follow a **first-wins** rule: later
+clients that arrive at the same `--cwd` with different values for those
+flags do not change the running workspace. A debug log line is emitted
+recording the mismatch, and the workspace keeps the flags it was created
+with.
+
+A workspace lives as long as at least one client has an SSE event stream
+open against it. When the last stream disconnects, the workspace is torn
+down. There is a short grace window right after `POST /v1/workspaces` so a
+client that has created the workspace but not yet opened its event stream
+does not get reaped before it can attach.
+
+### Global context files
+
+Crush automatically includes two files for cross-project instructions.
+
+- `~/.config/crush/CRUSH.md`: Crush-specific rules that would confuse other
+  agentic coding tools. If you only use Crush, this is the only one you need to
+  edit.
+- `~/.config/AGENTS.md`: generic instructions that other coding tools might
+  read. Avoid referring to Crush-specific features or workflows here. You
+  probably only care about this if you use multiple agentic coding tools and
+  want to share instructions between them.
+
+You can customize these paths using the `global_context_paths` option in your
+configuration:
+
+```jsonc
+{
+  "$schema": "https://charm.land/crush.json",
+  "options": {
+    "global_context_paths": [
+      "~/path/to/custom/context/file.md",
+      "/full/path/to/folder/of/files/" // recursively load all .md files in folder
+    ]
   }
 }
 ```
@@ -334,6 +462,145 @@ permissions. Use this with care.
 
 You can also skip all permission prompts entirely by running Crush with the
 `--yolo` flag. Be very, very careful with this feature.
+
+### Disabling Built-In Tools
+
+If you'd like to prevent Crush from using certain built-in tools entirely, you
+can disable them via the `options.disabled_tools` list. Disabled tools are
+completely hidden from the agent.
+
+```json
+{
+  "$schema": "https://charm.land/crush.json",
+  "options": {
+    "disabled_tools": ["bash", "sourcegraph"]
+  }
+}
+```
+
+To disable tools from MCP servers, see the [MCP config section](#mcps).
+
+### Disabling Skills
+
+If you'd like to prevent Crush from using certain skills entirely, you can
+disable them via the `options.disabled_skills` list. Disabled skills are hidden
+from the agent, including builtin skills and skills discovered from disk.
+
+```json
+{
+  "$schema": "https://charm.land/crush.json",
+  "options": {
+    "disabled_skills": ["crush-config"]
+  }
+}
+```
+
+### Agent Skills
+
+Crush supports the [Agent Skills](https://agentskills.io) open standard for
+extending agent capabilities with reusable skill packages. Skills are folders
+containing a `SKILL.md` file with instructions that Crush can discover and
+activate on demand.
+
+The global paths we looks for skills are:
+
+* `$CRUSH_SKILLS_DIR`
+* `$XDG_CONFIG_HOME/agents/skills` or `~/.config/agents/skills/`
+* `$XDG_CONFIG_HOME/crush/skills` or `~/.config/crush/skills/`
+* `~/.agents/skills/`
+* `~/.claude/skills/`
+* On Windows, we _also_ look at
+  * `%LOCALAPPDATA%\agents\skills\` or `%USERPROFILE%\AppData\Local\agents\skills\`
+  * `%LOCALAPPDATA%\crush\skills\` or `%USERPROFILE%\AppData\Local\crush\skills\`
+* Additional paths configured via `options.skills_paths`
+
+On top of that, we _also_ load skills in your project from the following
+relative paths:
+
+* `.agents/skills`
+* `.crush/skills`
+* `.claude/skills`
+* `.cursor/skills`
+
+```jsonc
+{
+  "$schema": "https://charm.land/crush.json",
+  "options": {
+    "skills_paths": [
+      "~/.config/crush/skills", // Windows: "%LOCALAPPDATA%\\crush\\skills",
+      "./project-skills",
+    ],
+  },
+}
+```
+
+You can get started with example skills from [anthropics/skills](https://github.com/anthropics/skills):
+
+```bash
+# Unix
+mkdir -p ~/.config/crush/skills
+cd ~/.config/crush/skills
+git clone https://github.com/anthropics/skills.git _temp
+mv _temp/skills/* . && rm -rf _temp
+```
+
+```powershell
+# Windows (PowerShell)
+mkdir -Force "$env:LOCALAPPDATA\crush\skills"
+cd "$env:LOCALAPPDATA\crush\skills"
+git clone https://github.com/anthropics/skills.git _temp
+mv _temp/skills/* . ; rm -r -force _temp
+```
+
+#### User-Invocable Skills
+
+Skills can be made invocable as commands from the commands palette (Ctrl+P). Add `user-invocable: true` to the skill's YAML frontmatter:
+
+```yaml
+---
+name: my-skill
+description: A skill that can be invoked as a command.
+user-invocable: true
+---
+```
+
+User-invocable skills appear in the commands palette with a `user:` or `project:` prefix:
+- Skills from global directories show as `user:skill-name`
+- Skills from project directories show as `project:skill-name`
+
+When invoked, the skill's instructions are loaded into the conversation context.
+
+To prevent the model from auto-triggering a skill (while still allowing user invocation), add `disable-model-invocation: true`:
+
+```yaml
+---
+name: my-skill
+description: Only invocable by users, not the model.
+user-invocable: true
+disable-model-invocation: true
+---
+```
+
+Skills with `disable-model-invocation` won't appear in the model's available skills list but can still be invoked manually by users.
+
+### Desktop notifications
+
+Crush sends desktop notifications when a tool call requires permission and when
+the agent finishes its turn. They're only sent when the terminal window isn't
+focused _and_ your terminal supports reporting the focus state.
+
+```jsonc
+{
+  "$schema": "https://charm.land/crush.json",
+  "options": {
+    "disable_notifications": false, // default
+  },
+}
+```
+
+To disable desktop notifications, set `disable_notifications` to `true` in your
+configuration. On macOS, notifications currently lack icons due to platform
+limitations.
 
 ### Initialization
 
@@ -376,10 +643,9 @@ it creates. You can customize this behavior with the `attribution` option:
 
 - `trailer_style`: Controls the attribution trailer added to commit messages
   (default: `assisted-by`)
-	- `assisted-by`: Adds `Assisted-by: [Model Name] via Crush <crush@charm.land>`
-	  (includes the model name)
-	- `co-authored-by`: Adds `Co-Authored-By: Crush <crush@charm.land>`
-	- `none`: No attribution trailer
+  - `assisted-by`: Adds `Assisted-by: Crush:[ModelID]` as specified in [the convention](https://docs.kernel.org/process/coding-assistants.html#attribution)
+  - `co-authored-by`: Adds `Co-Authored-By: Crush <crush@charm.land>`
+  - `none`: No attribution trailer
 - `generated_with`: When true (default), adds `💘 Generated with Crush` line to
   commit messages and PR descriptions
 
@@ -391,8 +657,9 @@ Anthropic-compatible APIs.
 > [!NOTE]
 > Note that we support two "types" for OpenAI. Make sure to choose the right one
 > to ensure the best experience!
-> * `openai` should be used when proxying or routing requests through OpenAI.
-> * `openai-compat` should be used when using non-OpenAI providers that have OpenAI-compatible APIs.
+>
+> - `openai` should be used when proxying or routing requests through OpenAI.
+> - `openai-compat` should be used when using non-OpenAI providers that have OpenAI-compatible APIs.
 
 #### OpenAI-Compatible APIs
 
@@ -503,9 +770,9 @@ To add specific models to the configuration, configure as such:
 
 ### Local Models
 
-Local models can also be configured via OpenAI-compatible API. Here are two common examples:
-
-#### Ollama
+Crush can auto-discovers models from local providers. Add a custom provider
+with `type` set to `omlx`, `lmstudio`, `litellm`, or `ollama` and leave out
+the models list. Crush will populate the model list automatically.
 
 ```json
 {
@@ -513,7 +780,27 @@ Local models can also be configured via OpenAI-compatible API. Here are two comm
     "ollama": {
       "name": "Ollama",
       "base_url": "http://localhost:11434/v1/",
-      "type": "openai-compat",
+      "type": "ollama"
+    }
+  }
+}
+```
+
+#### Manual Model Configuration
+
+You can still list models explicitly. User-defined models always take
+precedence over discovered ones, and any fields you set won't be overwritten
+by auto-discovery. Auto discovery will run if the model list is empty for any
+`openai-compat` provider or if you pass `"auto_discovery": true` it will merge
+ the found models with your hand configured ones.
+
+```json
+{
+  "providers": {
+    "ollama": {
+      "name": "Ollama",
+      "base_url": "http://localhost:11434/v1/",
+      "type": "ollama",
       "models": [
         {
           "name": "Qwen 3 30B",
@@ -521,29 +808,8 @@ Local models can also be configured via OpenAI-compatible API. Here are two comm
           "context_window": 256000,
           "default_max_tokens": 20000
         }
-      ]
-    }
-  }
-}
-```
-
-#### LM Studio
-
-```json
-{
-  "providers": {
-    "lmstudio": {
-      "name": "LM Studio",
-      "base_url": "http://localhost:1234/v1/",
-      "type": "openai-compat",
-      "models": [
-        {
-          "name": "Qwen 3 30B",
-          "id": "qwen/qwen3-30b-a3b-2507",
-          "context_window": 256000,
-          "default_max_tokens": 20000
-        }
-      ]
+      ],
+      "auto_discovery": true
     }
   }
 }
@@ -661,8 +927,21 @@ Or by setting the following in your config:
 }
 ```
 
-Crush also respects the [`DO_NOT_TRACK`](https://consoledonottrack.com)
-convention which can be enabled via `export DO_NOT_TRACK=1`.
+Crush also respects the [`DO_NOT_TRACK`](https://donottrack.sh/) convention
+which can be enabled via `export DO_NOT_TRACK=1`.
+
+## Q&A
+
+### Why is clipboard copy and paste not working?
+
+Installing an extra tool might be needed on Unix-like environments.
+
+| Environment         | Tool                     |
+| ------------------- | ------------------------ |
+| Windows             | Native support           |
+| macOS               | Native support           |
+| Linux/BSD + Wayland | `wl-copy` and `wl-paste` |
+| Linux/BSD + X11     | `xclip` or `xsel`        |
 
 ## Contributing
 
@@ -673,11 +952,12 @@ See the [contributing guide](https://github.com/charmbracelet/crush?tab=contribu
 We’d love to hear your thoughts on this project. Need help? We gotchu. You can find us on:
 
 - [Twitter](https://twitter.com/charmcli)
-- [Slack](https://charm.land/slack)
+- [Slack][slack]
 - [Discord][discord]
 - [The Fediverse](https://mastodon.social/@charmcli)
 - [Bluesky](https://bsky.app/profile/charm.land)
 
+[slack]: https://charm.land/slack
 [discord]: https://charm.land/discord
 
 ## License
@@ -688,7 +968,7 @@ We’d love to hear your thoughts on this project. Need help? We gotchu. You can
 
 Part of [Charm](https://charm.land).
 
-<a href="https://charm.land/"><img alt="The Charm logo" width="400" src="https://stuff.charm.sh/charm-banner-next.jpg" /></a>
+<a href="https://charm.land/"><img alt="The Charm logo" width="400" src="https://stuff.charm.sh/charm-banner-softy.jpg" /></a>
 
 <!--prettier-ignore-->
 Charm热爱开源 • Charm loves open source

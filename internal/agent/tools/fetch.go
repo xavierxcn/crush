@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"html/template"
 	"io"
 	"net/http"
 	"strings"
@@ -16,26 +17,47 @@ import (
 	"github.com/charmbracelet/crush/internal/permission"
 )
 
-const FetchToolName = "fetch"
+const (
+	FetchToolName = "fetch"
+	MaxFetchSize  = 100 * 1024 // 100KB
+)
 
-//go:embed fetch.md
-var fetchDescription []byte
+//go:embed fetch.md.tpl
+var fetchDescriptionTmpl []byte
+
+var fetchDescriptionTpl = template.Must(
+	template.New("fetchDescription").
+		Parse(string(fetchDescriptionTmpl)),
+)
+
+type fetchDescriptionData struct {
+	GhAvailable    bool
+	MaxFetchSizeKB int
+}
+
+func fetchDescription() string {
+	return renderTemplate(fetchDescriptionTpl, fetchDescriptionData{
+		GhAvailable:    ghAvailable,
+		MaxFetchSizeKB: MaxFetchSize / 1024,
+	})
+}
 
 func NewFetchTool(permissions permission.Service, workingDir string, client *http.Client) fantasy.AgentTool {
 	if client == nil {
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.MaxIdleConns = 100
+		transport.MaxIdleConnsPerHost = 10
+		transport.IdleConnTimeout = 90 * time.Second
+
 		client = &http.Client{
-			Timeout: 30 * time.Second,
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-			},
+			Timeout:   30 * time.Second,
+			Transport: transport,
 		}
 	}
 
 	return fantasy.NewParallelAgentTool(
 		FetchToolName,
-		string(fetchDescription),
+		fetchDescription(),
 		func(ctx context.Context, params FetchParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.URL == "" {
 				return fantasy.NewTextErrorResponse("URL parameter is required"), nil
@@ -55,7 +77,8 @@ func NewFetchTool(permissions permission.Service, workingDir string, client *htt
 				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for creating a new file")
 			}
 
-			p := permissions.Request(
+			p, err := permissions.Request(
+				ctx,
 				permission.CreatePermissionRequest{
 					SessionID:   sessionID,
 					Path:        workingDir,
@@ -66,17 +89,21 @@ func NewFetchTool(permissions permission.Service, workingDir string, client *htt
 					Params:      FetchPermissionsParams(params),
 				},
 			)
-
-			if !p {
-				return fantasy.ToolResponse{}, permission.ErrorPermissionDenied
+			if err != nil {
+				return fantasy.ToolResponse{}, err
 			}
+			if !p {
+				return NewPermissionDeniedResponse(), nil
+			}
+
+			// maxFetchTimeoutSeconds is the maximum allowed timeout for fetch requests (2 minutes)
+			const maxFetchTimeoutSeconds = 120
 
 			// Handle timeout with context
 			requestCtx := ctx
 			if params.Timeout > 0 {
-				maxTimeout := 120 // 2 minutes
-				if params.Timeout > maxTimeout {
-					params.Timeout = maxTimeout
+				if params.Timeout > maxFetchTimeoutSeconds {
+					params.Timeout = maxFetchTimeoutSeconds
 				}
 				var cancel context.CancelFunc
 				requestCtx, cancel = context.WithTimeout(ctx, time.Duration(params.Timeout)*time.Second)
@@ -100,16 +127,15 @@ func NewFetchTool(permissions permission.Service, workingDir string, client *htt
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("Request failed with status code: %d", resp.StatusCode)), nil
 			}
 
-			maxSize := int64(5 * 1024 * 1024) // 5MB
-			body, err := io.ReadAll(io.LimitReader(resp.Body, maxSize))
+			body, err := io.ReadAll(io.LimitReader(resp.Body, MaxFetchSize))
 			if err != nil {
 				return fantasy.NewTextErrorResponse("Failed to read response body: " + err.Error()), nil
 			}
 
 			content := string(body)
 
-			isValidUt8 := utf8.ValidString(content)
-			if !isValidUt8 {
+			validUTF8 := utf8.ValidString(content)
+			if !validUTF8 {
 				return fantasy.NewTextErrorResponse("Response content is not valid UTF-8"), nil
 			}
 			contentType := resp.Header.Get("Content-Type")
@@ -152,15 +178,15 @@ func NewFetchTool(permissions permission.Service, workingDir string, client *htt
 					content = "<html>\n<body>\n" + body + "\n</body>\n</html>"
 				}
 			}
-			// calculate byte size of content
-			contentSize := int64(len(content))
-			if contentSize > MaxReadSize {
-				content = content[:MaxReadSize]
-				content += fmt.Sprintf("\n\n[Content truncated to %d bytes]", MaxReadSize)
+			// truncate content if it exceeds max read size
+			if int64(len(content)) >= MaxFetchSize {
+				content = content[:MaxFetchSize]
+				content += fmt.Sprintf("\n\n[Content truncated to %d bytes]", MaxFetchSize)
 			}
 
 			return fantasy.NewTextResponse(content), nil
-		})
+		},
+	)
 }
 
 func extractTextFromHTML(html string) (string, error) {
